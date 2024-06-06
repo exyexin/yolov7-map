@@ -1,6 +1,6 @@
 import os
 import cv2
-import sys  
+import sys
 import argparse
 
 # add path
@@ -12,7 +12,7 @@ realpath = realpath.split(_sep)
 from py_utils.coco_utils import COCO_test_helper
 import numpy as np
 from calmap import *
-
+from tools import *
 
 # OBJ_THRESH = 0.25
 # NMS_THRESH = 0.45
@@ -28,7 +28,6 @@ CLASSES = ("UAV")
 coco_id_list = [1]
 
 
-
 def filter_boxes(boxes, box_confidences, box_class_probs):
     """Filter boxes with object threshold.
     """
@@ -38,17 +37,18 @@ def filter_boxes(boxes, box_confidences, box_class_probs):
     class_max_score = np.max(box_class_probs, axis=-1)
     classes = np.argmax(box_class_probs, axis=-1)
 
-    if class_num==1:
+    if class_num == 1:
         _class_pos = np.where(box_confidences >= OBJ_THRESH)
         scores = (box_confidences)[_class_pos]
     else:
-        _class_pos = np.where(class_max_score* box_confidences >= OBJ_THRESH)
-        scores = (class_max_score* box_confidences)[_class_pos]
+        _class_pos = np.where(class_max_score * box_confidences >= OBJ_THRESH)
+        scores = (class_max_score * box_confidences)[_class_pos]
 
     boxes = boxes[_class_pos]
     classes = classes[_class_pos]
 
     return boxes, classes, scores
+
 
 def nms_boxes(boxes, scores):
     """Suppress non-maximal boxes.
@@ -90,15 +90,15 @@ def box_process(position, anchors):
     col = col.reshape(1, 1, grid_h, grid_w)
     row = row.reshape(1, 1, grid_h, grid_w)
     grid = np.concatenate((col, row), axis=1)
-    stride = np.array([IMG_SIZE[1]//grid_h, IMG_SIZE[0]//grid_w]).reshape(1,2,1,1)
+    stride = np.array([IMG_SIZE[1] // grid_h, IMG_SIZE[0] // grid_w]).reshape(1, 2, 1, 1)
 
     col = col.repeat(len(anchors), axis=0)
     row = row.repeat(len(anchors), axis=0)
     anchors = np.array(anchors)
     anchors = anchors.reshape(*anchors.shape, 1, 1)
 
-    box_xy = position[:,:2,:,:]*2 - 0.5
-    box_wh = pow(position[:,2:4,:,:]*2, 2) * anchors
+    box_xy = position[:, :2, :, :] * 2 - 0.5
+    box_wh = pow(position[:, 2:4, :, :] * 2, 2) * anchors
 
     box_xy += grid
     box_xy *= stride
@@ -106,25 +106,26 @@ def box_process(position, anchors):
 
     # Convert [c_x, c_y, w, h] to [x1, y1, x2, y2]
     xyxy = np.copy(box)
-    xyxy[:, 0, :, :] = box[:, 0, :, :] - box[:, 2, :, :]/ 2  # top left x
-    xyxy[:, 1, :, :] = box[:, 1, :, :] - box[:, 3, :, :]/ 2  # top left y
-    xyxy[:, 2, :, :] = box[:, 0, :, :] + box[:, 2, :, :]/ 2  # bottom right x
-    xyxy[:, 3, :, :] = box[:, 1, :, :] + box[:, 3, :, :]/ 2  # bottom right y
+    xyxy[:, 0, :, :] = box[:, 0, :, :] - box[:, 2, :, :] / 2  # top left x
+    xyxy[:, 1, :, :] = box[:, 1, :, :] - box[:, 3, :, :] / 2  # top left y
+    xyxy[:, 2, :, :] = box[:, 0, :, :] + box[:, 2, :, :] / 2  # bottom right x
+    xyxy[:, 3, :, :] = box[:, 1, :, :] + box[:, 3, :, :] / 2  # bottom right y
 
     return xyxy
+
 
 def post_process(input_data, anchors):
     boxes, scores, classes_conf = [], [], []
     # 1*255*h*w -> 3*85*h*w
-    input_data = [_in.reshape([len(anchors[0]),-1]+list(_in.shape[-2:])) for _in in input_data]
+    input_data = [_in.reshape([len(anchors[0]), -1] + list(_in.shape[-2:])) for _in in input_data]
     for i in range(len(input_data)):
-        boxes.append(box_process(input_data[i][:,:4,:,:], anchors[i]))
-        scores.append(input_data[i][:,4:5,:,:])
-        classes_conf.append(input_data[i][:,5:,:,:])
+        boxes.append(box_process(input_data[i][:, :4, :, :], anchors[i]))
+        scores.append(input_data[i][:, 4:5, :, :])
+        classes_conf.append(input_data[i][:, 5:, :, :])
 
     def sp_flatten(_in):
         ch = _in.shape[1]
-        _in = _in.transpose(0,2,3,1)
+        _in = _in.transpose(0, 2, 3, 1)
         return _in.reshape(-1, ch)
 
     boxes = [sp_flatten(_v) for _v in boxes]
@@ -171,12 +172,13 @@ def draw(image, boxes, scores, classes):
         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
                     (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
+
 def setup_model(args):
     model_path = args.model_path
     if model_path.endswith('.pt') or model_path.endswith('.torchscript'):
-        platform = 'pytorch'     # calculate maps
+        platform = 'pytorch'  # calculate maps
         if args.coco_map_test is True:
-            pred_json = args.model_path.split('.')[-2]+ '_{}'.format(platform) +'.json'
+            pred_json = args.model_path.split('.')[-2] + '_{}'.format(platform) + '.json'
             pred_json = pred_json.split('/')[-1]
             pred_json = os.path.join('./', pred_json)
             co_helper.export_to_json(pred_json)
@@ -187,7 +189,7 @@ def setup_model(args):
         model = Torch_model_container(args.model_path)
     elif model_path.endswith('.rknn'):
         platform = 'rknn'
-        from py_utils.rknn_executor import RKNN_model_container 
+        from py_utils.rknn_executor import RKNN_model_container
         model = RKNN_model_container(args.model_path, args.target, args.device_id)
     elif model_path.endswith('onnx'):
         platform = 'onnx'
@@ -198,6 +200,7 @@ def setup_model(args):
     print('Model-{} is {} model, starting val'.format(model_path, platform))
     return model, platform
 
+
 def img_check(path):
     img_type = ['.jpg', '.jpeg', '.png', '.bmp']
     for _type in img_type:
@@ -205,30 +208,34 @@ def img_check(path):
             return True
     return False
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     # basic params
-    parser.add_argument('--model_path', type=str,default='./model/Anti-UAV.onnx', help='model path, could be .pt or .rknn file')
+    parser.add_argument('--model_path', type=str, default='./model/Anti-UAV.onnx',
+                        help='model path, could be .pt or .rknn file')
     parser.add_argument('--target', type=str, default='rk3588', help='target RKNPU platform')
     parser.add_argument('--device_id', type=str, default=None, help='device id')
-    
+
     parser.add_argument('--img_show', action='store_true', default=False, help='draw the result and show')
     parser.add_argument('--img_save', action='store_true', default=True, help='save the result')
 
     # data params
-    parser.add_argument('--anno_json', type=str, default='../../../datasets/COCO/annotations/instances_val2017.json', help='coco annotation path')
+    parser.add_argument('--anno_json', type=str, default='../../../datasets/COCO/annotations/instances_val2017.json',
+                        help='coco annotation path')
     # coco val folder: '../../../datasets/COCO//val2017'
     parser.add_argument('--img_folder', type=str, default='./datasets/images/val', help='img folder path')
     parser.add_argument('--coco_map_test', action='store_true', help='enable coco map test')
-    parser.add_argument('--anchors', type=str, default='./RK_anchors.txt', help='target to anchor file, only yolov5, yolov7 need this param')
+    parser.add_argument('--anchors', type=str, default='./RK_anchors.txt',
+                        help='target to anchor file, only yolov5, yolov7 need this param')
 
     args = parser.parse_args()
 
     with open(args.anchors, 'r') as f:
         values = [float(_v) for _v in f.readlines()]
-        anchors = np.array(values).reshape(3,-1,2).tolist()
+        anchors = np.array(values).reshape(3, -1, 2).tolist()
     print("use anchors from '{}', which is {}".format(args.anchors, anchors))
-    
+
     # init model
     model, platform = setup_model(args)
 
@@ -241,10 +248,11 @@ if __name__ == '__main__':
 
     # run test
     for i in range(len(img_list)):
-        print('infer {}/{}'.format(i+1, len(img_list)), end='\r')
+        print('infer {}/{}'.format(i + 1, len(img_list)), end='\r')
 
         img_name = img_list[i]
         img_path = os.path.join(args.img_folder, img_name)
+        label_path = img_path.replace('images', 'labels').replace('jpg', 'txt')
         if not os.path.exists(img_path):
             print("{} is not found", img_name)
             continue
@@ -260,30 +268,35 @@ if __name__ == '__main__':
         '''
 
         # Due to rga init with (0,0,0), we using pad_color (0,0,0) instead of (114, 114, 114)
-        pad_color = (0,0,0)
-        img = co_helper.letter_box(im= img_src.copy(), new_shape=(IMG_SIZE[1], IMG_SIZE[0]), pad_color=(0,0,0))
+        pad_color = (0, 0, 0)
+        img = co_helper.letter_box(im=img_src.copy(), new_shape=(IMG_SIZE[1], IMG_SIZE[0]), pad_color=(0, 0, 0))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         # preprocee if not rknn model
         if platform in ['pytorch', 'onnx']:
-            input_data = img.transpose((2,0,1))
-            input_data = input_data.reshape(1,*input_data.shape).astype(np.float32)
-            input_data = input_data/255.
+            input_data = img.transpose((2, 0, 1))
+            input_data = input_data.reshape(1, *input_data.shape).astype(np.float32)
+            input_data = input_data / 255.
         else:
             input_data = img
 
         outputs = model.run([input_data])
         boxes, classes, scores = post_process(outputs, anchors)
         ## 此处已计算出结果
-        detections={'image_id':i,
-                    'category_id':classes,
-                    'bbox':boxes,
-                    'score':scores}
-        get
-        gt={'image_id':i,
-            'category_id':classes,
-            'bbox':boxes}
-        calculate_map()
+
+        # detections=[{'image_id': i,
+        #              'category_id': classes,
+        #              'bbox': boxes,
+        #              'score': scores}]
+        detections = []
+        for box, score, cl in zip(boxes, scores, classes):
+            detections.append({'image_id': i,
+                               'category_id': cl,
+                               'bbox': box,
+                               'score': score})
+
+        gt = get_gt(label_path, IMG_SIZE)
+        map = calculate_map(detections, gt)
 
         if args.img_show or args.img_save:
             print('\n\nIMG: {}'.format(img_name))
@@ -297,7 +310,7 @@ if __name__ == '__main__':
                 result_path = os.path.join('./result', img_name)
                 cv2.imwrite(result_path, img_p)
                 print('Detection result save to {}'.format(result_path))
-                 
+
             if args.img_show:
                 cv2.imshow("full post process result", img_p)
                 cv2.waitKeyEx(0)
@@ -312,15 +325,14 @@ if __name__ == '__main__':
         #                                         score = round(scores[i], 5).astype(np.float)
         #                                         )
 
-    if False: 
+    if False:
         # calculate maps
         if args.coco_map_test is True:
-            pred_json = args.model_path.split('.')[-2]+ '_{}'.format(platform) +'.json'
+            pred_json = args.model_path.split('.')[-2] + '_{}'.format(platform) + '.json'
             pred_json = pred_json.split('/')[-1]
             pred_json = os.path.join('./', pred_json)
             co_helper.export_to_json(pred_json)
 
             from py_utils.coco_utils import coco_eval_with_json
+
             coco_eval_with_json(args.anno_json, pred_json)
-
-
